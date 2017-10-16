@@ -239,10 +239,10 @@ actionsHelp()
 		      Displays all the lines in SRC file located in the todo.txt directory,
 		      sorted by priority with line  numbers.  If TERM specified, lists
 		      all lines that contain TERM(s) in SRC file.  Hides all tasks that
-		      contain TERM(s) preceded by a minus sign (i.e. -TERM).  
+		      contain TERM(s) preceded by a minus sign (i.e. -TERM).
 		      Without any arguments, the names of all text files in the todo.txt
 		      directory are listed.
-		
+
 		    listpri [PRIORITIES] [TERM...]
 		    lsp [PRIORITIES] [TERM...]
 		      Displays all tasks prioritized PRIORITIES.
@@ -250,7 +250,7 @@ actionsHelp()
 		      If no PRIORITIES specified, lists all prioritized tasks.
 		      If TERM specified, lists only prioritized tasks that contain TERM(s).
 		      Hides all tasks that contain TERM(s) preceded by a minus sign
-		      (i.e. -TERM).  
+		      (i.e. -TERM).
 
 		    listproj [TERM...]
 		    lsprj [TERM...]
@@ -301,7 +301,7 @@ addonHelp()
 	EndAddonActionsHeader
                     didPrintAddonActionsHeader=1
                 fi
-                "$action" usage
+                # echo "$action" usage
             elif [ -d "$action" -a -x "$action/$(basename $action)" ]; then
                 if [ ! "$didPrintAddonActionsHeader" ]; then
                     cat <<-EndAddonActionsHeader
@@ -309,7 +309,7 @@ addonHelp()
 	EndAddonActionsHeader
                     didPrintAddonActionsHeader=1
                 fi
-                "$action/$(basename $action)" usage
+                # echo "$action/$(basename $action)" usage
             fi
         done
     fi
@@ -320,10 +320,28 @@ actionUsage()
     for actionName
     do
         action="${TODO_ACTIONS_DIR}/${actionName}"
+
+        echo $action
+
+        if [ -d "$action" -a -r "$action/package.json" ]
+        then
+            echo "config file"
+
+            action_name=`_readJSON "$action/package.json" name` || exit 1;
+            action_display_name=`_readJSON "$action/package.json" displayName` || exit 1;
+            action_description=`_readJSON "$action/package.json" description` || exit 1;
+            action_version=`_readJSON "$action/package.json" version` || exit 1;
+
+            echo $action_name
+            echo $action_display_name
+            echo $action_description
+            echo $action_version
+        fi
+
         if [ -f "$action" -a -x "$action" ]; then
-            "$action" usage
+            echo "1$action" usage
         elif [ -d "$action" -a -x "$action/$(basename $action)" ]; then
-            "$action/$(basename $action)" usage
+            echo "2$action/$(basename $action)" usage
         else
             builtinActionUsage=$(actionsHelp | sed -n -e "/^    ${actionName//\//\\/} /,/^\$/p" -e "/^    ${actionName//\//\\/}$/,/^\$/p")
             if [ "$builtinActionUsage" ]; then
@@ -396,6 +414,7 @@ getTodo()
     todo=$(sed "$item!d" "${2:-$TODO_FILE}")
     [ -z "$todo" ] && die "$(getPrefix "$2"): No task $item."
 }
+
 getNewtodo()
 {
     # Parameters:    $1: task number
@@ -866,12 +885,14 @@ _list() {
         echo "$(getPrefix "$src"): ${NUMTASKS:-0} of ${TOTALTASKS:-0} tasks shown"
     fi
 }
+
 getPadding()
 {
     ## We need one level of padding for each power of 10 $LINES uses.
     LINES=$(sed -n '$ =' "${1:-$TODO_FILE}")
     printf %s ${#LINES}
 }
+
 _format()
 {
     # Parameters:    $1: todo input file; when empty formats stdin
@@ -991,6 +1012,24 @@ listWordsWithSigil()
     eval "$(filtercommand 'cat "${FILE[@]}"' '' "$@")" | grep -o "[^ ]*${sigil}[^ ]\\+" | grep "^$sigil" | sort -u
 }
 
+function _readJSON {
+    UNAMESTR=`uname`
+    if [[ "$UNAMESTR" == 'Linux' ]]; then
+        SED_EXTENDED='-r'
+    elif [[ "$UNAMESTR" == 'Darwin' ]]; then
+        SED_EXTENDED='-E'
+    fi;
+
+    VALUE=`grep -m 1 "\"${2}\"" ${1} | sed ${SED_EXTENDED} 's/^ *//;s/.*: *"//;s/",?//'`
+
+    if [ ! "$VALUE" ]; then
+        echo "Error: Cannot find \"${2}\" in ${1}" >&2;
+        exit 1;
+    else
+        echo $VALUE ;
+    fi;
+}
+
 export -f cleaninput getPrefix getTodo getNewtodo shellquote filtercommand _list listWordsWithSigil getPadding _format die
 
 # == HANDLE ACTION ==
@@ -1014,6 +1053,15 @@ elif [ -d "$TODO_ACTIONS_DIR" -a -x "$TODO_ACTIONS_DIR/$action" ]
 then
     "$TODO_ACTIONS_DIR/$action" "$@"
     exit $?
+else
+    # Search for symbolic links, and use the first one found.
+    _action=$( find "$TODO_ACTIONS_DIR" -type l -name "$action" -print | head -n 1 )
+
+    if [ -a "$_action" ]
+    then
+        "$_action" "$@"
+        exit $?
+    fi
 fi
 
 ## Only run if $action isn't found in .todo.actions.d
@@ -1040,7 +1088,7 @@ case $action in
         input=$*
     fi
 
-    # Set Internal Field Seperator as newline so we can 
+    # Set Internal Field Seperator as newline so we can
     # loop across multiple lines
     SAVEIFS=$IFS
     IFS=$'\n'
